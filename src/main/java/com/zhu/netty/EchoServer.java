@@ -1,12 +1,16 @@
 package com.zhu.netty;
 
 import io.netty.bootstrap.ServerBootstrap;
+import io.netty.buffer.ByteBuf;
 import io.netty.channel.ChannelFuture;
 import io.netty.channel.ChannelInitializer;
 import io.netty.channel.EventLoopGroup;
+import io.netty.channel.ServerChannel;
 import io.netty.channel.nio.NioEventLoopGroup;
+import io.netty.channel.socket.ServerSocketChannel;
 import io.netty.channel.socket.SocketChannel;
 import io.netty.channel.socket.nio.NioServerSocketChannel;
+import io.netty.channel.socket.nio.NioSocketChannel;
 
 import java.net.InetSocketAddress;
 
@@ -34,22 +38,32 @@ public class EchoServer {
     public void start() throws InterruptedException {
         final EchoServerHandler echoServerHandler = new EchoServerHandler();
         //创建EventLoopGroup
-        EventLoopGroup group = new NioEventLoopGroup();
+        EventLoopGroup boss = new NioEventLoopGroup();
+        EventLoopGroup worker = new NioEventLoopGroup(2);
         try {
             //创建ServerBootstrap
             ServerBootstrap serverBootstrap = new ServerBootstrap();
             //因为你正在使用的是 NIO 传输，所以你指定了NioEventLoopGroup来接受和处理新的连接
-            serverBootstrap.group(group)
+            serverBootstrap.group(boss, worker)
                     //指定所使用的NIO传输channel，这里就是父Channel
                     .channel(NioServerSocketChannel.class)
                     //使用指定的端口设置套接字地址
                     .localAddress(new InetSocketAddress(port))
+                    //处理BossGroup中的事件,主要监听已经绑定到本地port端口的套接字
+                    .handler(new ChannelInitializer<ServerChannel>() {
+                        @Override
+                        protected void initChannel(ServerChannel ch) throws Exception {
+                            System.out.println("已经绑定到本地"+port+"端口，正在监听！");
+                        }
+                    })
+                    //处理WorkerGroup中的事件，主要处理传入客户端连接的Channel
                     //添加一个echoServerHandler到子Channel的ChannelPipeline，
                     // 当一个新的连接被接受时，一个新的子Channel将会被创建，用于处理入站消息通知
                     // 而ChannelInitializer将会把一个你的EchoServerHandler的实例添加到该Channel的ChannelPipeline中
                     .childHandler(new ChannelInitializer<SocketChannel>() {
                         @Override
                         protected void initChannel(SocketChannel ch) throws Exception {
+                            System.out.println("新连接进入。。。");
                             //echoServerHandler 中@Sharable表示我们可以使用同样的实例
                             ch.pipeline().addLast(echoServerHandler);
                         }
@@ -61,7 +75,8 @@ public class EchoServer {
             channelFuture.channel().closeFuture().sync();
         }finally {
             //关闭EventLoopGroup释放所有资源
-            group.shutdownGracefully().sync();
+            boss.shutdownGracefully().sync();
+            worker.shutdownGracefully().sync();
         }
     }
 }
